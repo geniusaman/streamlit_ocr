@@ -3,16 +3,19 @@ import fitz
 import pytesseract
 from PIL import Image
 import io
+import zipfile
 
 st.set_page_config(page_title="PDF OCR", layout="wide")
 
 st.title("📄 PDF OCR")
-st.write("Upload a PDF and extract **page-wise OCR text**. No files are stored on disk.")
+st.write("Upload a PDF and extract **page-wise OCR text**.")
 
 uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"])
 
 
+# Convert PDF → Images (in memory)
 def pdf_to_images(pdf_bytes):
+
     images = []
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -21,7 +24,7 @@ def pdf_to_images(pdf_bytes):
 
         page = doc.load_page(page_index)
 
-        pix = page.get_pixmap(matrix=fitz.Matrix(3,3))
+        pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
 
         img_bytes = pix.tobytes("png")
 
@@ -32,11 +35,26 @@ def pdf_to_images(pdf_bytes):
     return images
 
 
+# Run OCR with preview + progress
 def run_ocr(images):
 
     results = []
 
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    page_preview = st.empty()
+
+    total_pages = len(images)
+
     for i, image in enumerate(images):
+
+        status_text.text(f"OCR Processing Page {i+1}/{total_pages}")
+
+        page_preview.image(
+            image,
+            caption=f"Page {i+1}",
+            use_container_width=True
+        )
 
         text = pytesseract.image_to_string(
             image,
@@ -48,9 +66,35 @@ def run_ocr(images):
             "text": text
         })
 
+        progress_bar.progress((i + 1) / total_pages)
+
+    status_text.success("OCR Completed ✅")
+
     return results
 
 
+# Create ZIP file in memory
+def create_zip(results):
+
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+
+        for page in results:
+
+            filename = f"pg{page['page']}.txt"
+
+            zip_file.writestr(
+                filename,
+                page["text"]
+            )
+
+    zip_buffer.seek(0)
+
+    return zip_buffer
+
+
+# Main app logic
 if uploaded_pdf:
 
     pdf_bytes = uploaded_pdf.read()
@@ -58,23 +102,17 @@ if uploaded_pdf:
     if st.button("Run OCR"):
 
         with st.spinner("Extracting pages..."):
-
             images = pdf_to_images(pdf_bytes)
 
         st.success(f"{len(images)} pages extracted")
 
-        with st.spinner("Running OCR..."):
+        results = run_ocr(images)
 
-            results = run_ocr(images)
+        zip_file = create_zip(results)
 
-        st.success("OCR completed")
-
-        for page_data in results:
-
-            st.subheader(f"Page {page_data['page']}")
-
-            st.text_area(
-                "OCR Text",
-                page_data["text"],
-                height=200
-            )
+        st.download_button(
+            label="📥 Download OCR as ZIP",
+            data=zip_file,
+            file_name="ocr_pages.zip",
+            mime="application/zip"
+        )
