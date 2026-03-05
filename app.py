@@ -42,7 +42,9 @@ def run_ocr(images):
 
     progress_bar = st.progress(0)
     status_text = st.empty()
-    page_preview = st.empty()
+
+    preview_col, info_col = st.columns([1,4])
+    page_preview = preview_col.empty()
 
     total_pages = len(images)
 
@@ -53,7 +55,7 @@ def run_ocr(images):
         page_preview.image(
             image,
             caption=f"Page {i+1}",
-            use_container_width=True
+            width=120   # tiny preview
         )
 
         text = pytesseract.image_to_string(
